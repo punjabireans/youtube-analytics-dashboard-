@@ -1,6 +1,4 @@
-# streamlit_app.py
-# YouTube Trending Analytics Dashboard
-# Secure, auto-refreshing, and deployment-ready
+
 
 import os
 import re
@@ -338,10 +336,10 @@ def main():
             "Australia": "AU", "Germany": "DE", "France": "FR", "Brazil": "BR",
             "Japan": "JP", "South Korea": "KR"
         }
-        country_name = st.selectbox("🌍 Country", options=list(COUNTRIES.keys()), index=0)
+        country_name = st.selectbox(" Country", options=list(COUNTRIES.keys()), index=0)
         region_code = COUNTRIES[country_name]
         max_monitor = st.slider("🎥 Max Videos to Monitor", 5, 50, 30)
-        enable_scrape = st.checkbox("🔍 Enable Live View Count Scraping", value=True)
+        enable_scrape = st.checkbox("Enable Live View Count Scraping", value=True)
         st.info("⏱ App auto-refreshes every 60 seconds.")
 
     placeholder = st.empty()
@@ -359,7 +357,7 @@ def main():
 
                 items = yt.fetch_trending(region_code, max_monitor)
                 if not items:
-                    st.error("❌ Failed to fetch trending videos. Check region or API key.")
+                    st.error(" Failed to fetch trending videos. Check region or API key.")
                     time.sleep(60)
                     continue
 
@@ -413,11 +411,11 @@ def main():
                 recent_cat_counts = analyze_recent_uploads(df)
                 hashtag_counts = analyze_hashtags(df)
 
-                st.subheader("🔥 Top 5 Trending Videos (by views)")
+                st.subheader("Top 5 Trending Videos (by views)")
                 for i, row in top5.iterrows():
                     st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
                                 f"👁 {human_int(row['views'])} views · "
-                                f"👍 {human_int(row['likes'])} likes")
+                                f" {human_int(row['likes'])} likes")
 
                 timestamp = int(time.time())
                 col1, col2 = st.columns(2)
@@ -439,7 +437,7 @@ def main():
                 else:
                     st.markdown("*No hashtags found.*")
 
-                st.success(f"✅ Updated at {now.strftime('%H:%M:%S UTC')} | Region: {country_name}")
+                st.success(f" Updated at {now.strftime('%H:%M:%S UTC')} | Region: {country_name}")
 
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
