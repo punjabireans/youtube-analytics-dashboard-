@@ -1,0 +1,6 @@
+streamlit==1.32.2
+google-api-python-client==2.100.0
+pandas==2.2.1
+requests==2.31.0
+beautifulsoup4==4.12.3
+plotly==5.18.0
