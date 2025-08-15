@@ -1,5 +1,4 @@
 
-
 import os
 import re
 import json
@@ -18,17 +17,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # =======================
-# 🔐 Load API Key from Streamlit Secrets
+# Load API Key Securely
 # =======================
 try:
     YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 except KeyError:
-    st.error("❌ **API Key Not Found!**")
-    st.markdown("""
-    Please set your YouTube API key:
-    - **Locally**: Create `.streamlit/secrets.toml` with `YOUTUBE_API_KEY = "your_key"`
-    - **On Streamlit Cloud**: Add it in app settings under 'Secrets'.
-    """)
+    st.error("API Key not found. Please set YOUTUBE_API_KEY in secrets.")
     st.stop()
 
 # =======================
@@ -75,7 +69,7 @@ def parse_metric_number(s: str) -> int:
     if match:
         num = float(match.group(1))
         suffix = match.group(2).upper() if match.group(2) else ""
-        multipliers = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
+        multipliers = {"K": 1000, "M": 1000000, "B": 1000000000}
         return int(num * multipliers.get(suffix, 1))
     digits = re.findall(r"\d+", s)
     return int("".join(digits)) if digits else 0
@@ -109,7 +103,7 @@ class YouTubeAPI:
             self.youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
         except Exception as e:
             logger.error(f"Failed to initialize YouTube API: {e}")
-            st.error("❌ Failed to connect to YouTube API. Check your API key.")
+            st.error("Failed to connect to YouTube API. Check your API key.")
             st.stop()
 
     def fetch_trending(self, region_code: str, max_results: int = 50) -> List[dict]:
@@ -138,34 +132,11 @@ class YouTubeAPI:
             return {}
 
 # =======================
-# Web Scraper for Live View Count
+# Web Scraping (Optional - Disabled by Default)
 # =======================
 def scrape_view_count(video_id: str, timeout: int = 10) -> int:
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    headers = {**HEADERS, "User-Agent": USER_AGENTS[hash(video_id) % len(USER_AGENTS)]}
-    for _ in range(MAX_RETRIES):
-        try:
-            time.sleep(0.5)
-            r = requests.get(url, headers=headers, timeout=timeout)
-            if r.status_code != 200:
-                continue
-            html = r.text
-            soup = BeautifulSoup(html, "html.parser")
-            meta = soup.find("meta", itemprop="interactionCount")
-            if meta and meta.get("content", "").isdigit():
-                return int(meta["content"])
-            patterns = [
-                r'"viewCount":"(\d+)"',
-                r'"viewCountText".*?"simpleText":"([^"]+)"',
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, html)
-                if match:
-                    val = match.group(1).replace("views", "").replace(",", "").strip()
-                    return parse_metric_number(val)
-        except Exception as e:
-            logger.debug(f"Scrape error for {video_id}: {e}")
-            time.sleep(RETRY_DELAY)
+    # Return 0 immediately to avoid delays
+    # You can enable this later with caution
     return 0
 
 # =======================
@@ -218,12 +189,14 @@ def compute_24h_delta(current_df: pd.DataFrame, hist_df: pd.DataFrame, now: dt.d
         current_df["likes_delta_24h"] = 0
         current_df["delta_mode"] = "since_start"
         return current_df
+
     cutoff = now - dt.timedelta(hours=24)
     baselines = {}
     for vid, group in hist_df.groupby("video_id"):
         before = group[group["timestamp"] <= cutoff]
         base_row = before.iloc[-1] if not before.empty else group.iloc[0]
         baselines[vid] = base_row
+
     vdelta, ldelta, modes = [], [], []
     for _, row in current_df.iterrows():
         vid = row["video_id"]
@@ -237,6 +210,7 @@ def compute_24h_delta(current_df: pd.DataFrame, hist_df: pd.DataFrame, now: dt.d
             ldelta.append(max(0, row["likes"] - base["likes"]))
             mode = "exact_24h" if base["timestamp"] <= cutoff else "since_start"
             modes.append(mode)
+
     current_df["views_delta_24h"] = vdelta
     current_df["likes_delta_24h"] = ldelta
     current_df["delta_mode"] = modes
@@ -317,133 +291,148 @@ def plot_recent_categories_bar(recent_cat_counts: pd.Series):
 # =======================
 def main():
     st.set_page_config(page_title="YouTube Trending Dashboard", layout="wide")
-    st.markdown("<style>.stAlert { margin-bottom: 1rem; }</style>", unsafe_allow_html=True)
 
-    st.title("📊 YouTube Trending Analytics Dashboard")
+    st.title("YouTube Trending Analytics Dashboard")
     st.markdown("""
-    ### Real-time Insights into What's Trending on YouTube
-    - 🕵️‍♂️ Live view counts (scraped from YouTube pages)
-    - 📈 24-hour growth trends
-    - 🏆 Top videos by views & likes
-    - 🏷️ Popular categories & hashtags
-    - 🔄 Auto-refreshes every 60 seconds
+    Real-time insights into what's trending on YouTube.
+    
+    Features:
+    - Top trending videos by country
+    - View and like counts
+    - Category and hashtag analysis
+    - 24-hour growth tracking
     """)
 
     with st.sidebar:
-        st.header("⚙ Settings")
+        st.header("Settings")
         COUNTRIES = {
-            "United States": "US", "India": "IN", "United Kingdom": "GB", "Canada": "CA",
-            "Australia": "AU", "Germany": "DE", "France": "FR", "Brazil": "BR",
-            "Japan": "JP", "South Korea": "KR"
+            "United States": "US",
+            "India": "IN",
+            "United Kingdom": "GB",
+            "Canada": "CA",
+            "Australia": "AU",
+            "Germany": "DE",
+            "France": "FR",
+            "Brazil": "BR",
+            "Japan": "JP",
+            "South Korea": "KR",
         }
-        country_name = st.selectbox(" Country", options=list(COUNTRIES.keys()), index=0)
+        country_name = st.selectbox("Country", options=list(COUNTRIES.keys()), index=0)
         region_code = COUNTRIES[country_name]
-        max_monitor = st.slider("🎥 Max Videos to Monitor", 5, 50, 30)
-        enable_scrape = st.checkbox("Enable Live View Count Scraping", value=True)
-        st.info("⏱ App auto-refreshes every 60 seconds.")
+        max_monitor = st.slider("Max Videos to Monitor", 5, 50, 30)
+        enable_scrape = st.checkbox("Enable Live View Count Scraping (not recommended)", value=False)
+        st.info("Click 'Refresh Data' to load trending videos.")
 
-    placeholder = st.empty()
+    # Only run when button is clicked or first load
+    if st.button("Refresh Data") or "data_fetched" not in st.session_state:
+        st.session_state.data_fetched = True
+        st.write("Fetching data...")
 
-    while True:
-        with placeholder.container():
-            try:
-                yt = YouTubeAPI(YOUTUBE_API_KEY)
-                cat_cache = load_category_cache()
-                if region_code not in cat_cache:
-                    with st.spinner(f"Fetching categories for {country_name}..."):
-                        cat_cache[region_code] = yt.fetch_categories(region_code)
-                        save_category_cache(cat_cache)
-                cat_map = cat_cache[region_code]
+        try:
+            yt = YouTubeAPI(YOUTUBE_API_KEY)
 
-                items = yt.fetch_trending(region_code, max_monitor)
-                if not items:
-                    st.error(" Failed to fetch trending videos. Check region or API key.")
-                    time.sleep(60)
-                    continue
+            # Load or fetch category map
+            cat_cache = load_category_cache()
+            if region_code not in cat_cache:
+                st.info(f"Fetching categories for {country_name}...")
+                cat_cache[region_code] = yt.fetch_categories(region_code)
+                save_category_cache(cat_cache)
+            cat_map = cat_cache[region_code]
 
-                records = []
-                now = utcnow()
-                for item in items:
-                    snip = item.get("snippet", {})
-                    stats = item.get("statistics", {})
-                    try:
-                        published_dt = pd.to_datetime(snip.get("publishedAt"), utc=True)
-                    except Exception:
-                        published_dt = None
+            # Fetch trending videos
+            items = yt.fetch_trending(region_code, max_monitor)
+            if not items:
+                st.error("Failed to fetch trending videos. Check region or API key.")
+                return
 
-                    vid = item["id"]
-                    views_api = int(stats.get("viewCount", 0))
-                    likes_api = int(stats.get("likeCount", 0))
-                    views_live = views_api
-                    if enable_scrape:
-                        scraped = scrape_view_count(vid)
-                        if scraped > 0:
-                            views_live = scraped
+            # Process videos
+            records = []
+            now = utcnow()
+            for item in items:
+                snip = item.get("snippet", {})
+                stats = item.get("statistics", {})
+                try:
+                    published_dt = pd.to_datetime(snip.get("publishedAt"), utc=True)
+                except Exception:
+                    published_dt = None
 
-                    records.append({
-                        "video_id": vid,
-                        "title": snip.get("title", "(no title)"),
-                        "url": f"https://www.youtube.com/watch?v={vid}",
-                        "views": views_live,
-                        "views_api": views_api,
-                        "likes": likes_api,
-                        "category_id": snip.get("categoryId", "Unknown"),
-                        "category": cat_map.get(snip.get("categoryId", ""), "Unknown"),
-                        "tags": snip.get("tags", []),
-                        "description": snip.get("description", ""),
-                        "published_at": published_dt,
-                    })
+                vid = item["id"]
+                views_api = int(stats.get("viewCount", 0))
+                likes_api = int(stats.get("likeCount", 0))
 
-                df = pd.DataFrame(records)
-                df["published_at"] = pd.to_datetime(df["published_at"], utc=True)
+                views_live = views_api
+                if enable_scrape:
+                    scraped = scrape_view_count(vid)
+                    if scraped > 0:
+                        views_live = scraped
 
-                hist_df = df[["video_id", "views", "likes"]].copy()
-                hist_df["timestamp"] = ts_str(now)
-                append_history(region_code, hist_df[["timestamp", "video_id", "views", "likes"]])
+                records.append({
+                    "video_id": vid,
+                    "title": snip.get("title", "(no title)"),
+                    "url": f"https://www.youtube.com/watch?v={vid}",
+                    "views": views_live,
+                    "views_api": views_api,
+                    "likes": likes_api,
+                    "category_id": snip.get("categoryId", "Unknown"),
+                    "category": cat_map.get(snip.get("categoryId", ""), "Unknown"),
+                    "tags": snip.get("tags", []),
+                    "description": snip.get("description", ""),
+                    "published_at": published_dt,
+                })
 
-                full_hist = load_history(region_code)
-                df = compute_24h_delta(df, full_hist, now)
+            df = pd.DataFrame(records)
+            df["published_at"] = pd.to_datetime(df["published_at"], utc=True)
 
-                top5 = df.nlargest(5, "views")
-                top5_delta = df.nlargest(5, ["views_delta_24h", "likes_delta_24h"])
-                top8_likes = df.nlargest(8, "likes_delta_24h")
-                cat_counts = analyze_category_distribution(df)
-                recent_cat_counts = analyze_recent_uploads(df)
-                hashtag_counts = analyze_hashtags(df)
+            # Save to history
+            hist_df = df[["video_id", "views", "likes"]].copy()
+            hist_df["timestamp"] = ts_str(now)
+            append_history(region_code, hist_df[["timestamp", "video_id", "views", "likes"]])
 
-                st.subheader("Top 5 Trending Videos (by views)")
-                for i, row in top5.iterrows():
-                    st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
-                                f"👁 {human_int(row['views'])} views · "
-                                f" {human_int(row['likes'])} likes")
+            # Load full history and compute 24h delta
+            full_hist = load_history(region_code)
+            df = compute_24h_delta(df, full_hist, now)
 
-                timestamp = int(time.time())
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.plotly_chart(plot_category_pie(cat_counts), key=f"pie_{timestamp}", use_container_width=True)
-                with col2:
-                    st.plotly_chart(plot_likes_views_bar(top5_delta), key=f"bar1_{timestamp}", use_container_width=True)
+            # Analytics
+            top5 = df.nlargest(5, "views")
+            top5_delta = df.nlargest(5, ["views_delta_24h", "likes_delta_24h"])
+            top8_likes = df.nlargest(8, "likes_delta_24h")
+            cat_counts = analyze_category_distribution(df)
+            recent_cat_counts = analyze_recent_uploads(df)
+            hashtag_counts = analyze_hashtags(df)
 
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.plotly_chart(plot_top_likes_bar(top8_likes), key=f"bar2_{timestamp}", use_container_width=True)
-                with col4:
-                    st.plotly_chart(plot_recent_categories_bar(recent_cat_counts), key=f"bar3_{timestamp}", use_container_width=True)
+            # Display Top 5
+            st.subheader("Top 5 Trending Videos (by views)")
+            for i, row in top5.iterrows():
+                st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
+                            f"Views: {human_int(row['views'])}, Likes: {human_int(row['likes'])}")
 
-                st.subheader("#️⃣ Top 10 Hashtags in Descriptions")
-                if not hashtag_counts.empty:
-                    for tag, cnt in hashtag_counts.items():
-                        st.markdown(f"- **{tag}** — {cnt} mentions")
-                else:
-                    st.markdown("*No hashtags found.*")
+            # Charts
+            timestamp = int(time.time())
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(plot_category_pie(cat_counts), key=f"pie_{timestamp}", use_container_width=True)
+            with col2:
+                st.plotly_chart(plot_likes_views_bar(top5_delta), key=f"bar1_{timestamp}", use_container_width=True)
 
-                st.success(f" Updated at {now.strftime('%H:%M:%S UTC')} | Region: {country_name}")
+            col3, col4 = st.columns(2)
+            with col3:
+                st.plotly_chart(plot_top_likes_bar(top8_likes), key=f"bar2_{timestamp}", use_container_width=True)
+            with col4:
+                st.plotly_chart(plot_recent_categories_bar(recent_cat_counts), key=f"bar3_{timestamp}", use_container_width=True)
 
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
-                logger.error(f"Error in main loop: {e}")
+            # Hashtags
+            st.subheader("Top Hashtags in Descriptions")
+            if not hashtag_counts.empty:
+                for tag, cnt in hashtag_counts.items():
+                    st.markdown(f"- **{tag}** — {cnt} mentions")
+            else:
+                st.markdown("No hashtags found.")
 
-        time.sleep(60)
+            st.success(f"Updated at {now.strftime('%H:%M:%S UTC')} | Region: {country_name}")
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+            logger.error(f"Error in main: {e}")
 
 if __name__ == "__main__":
     main()
