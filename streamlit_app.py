@@ -1,3 +1,4 @@
+print("✅ STEP 1: streamlit_app.py is running!")
 import os
 import re
 import json
@@ -14,7 +15,7 @@ from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 import plotly.express as px
 import plotly.graph_objects as go
-
+print("✅ STEP 1: streamlit_app.py is running!")
 # =======================
 # Load API Key Securely
 # =======================
@@ -24,7 +25,7 @@ except KeyError:
     st.error("❌ API Key not found. Please set `YOUTUBE_API_KEY` in secrets.")
     st.info("Go to your app settings → Secrets → Add your key.")
     st.stop()
-
+print("✅ STEP 1: streamlit_app.py is running!")
 # =======================
 # Configuration
 # =======================
