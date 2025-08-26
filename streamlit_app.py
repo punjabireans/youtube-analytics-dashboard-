@@ -1,4 +1,4 @@
-print("✅ STEP 1: streamlit_app.py is running!")
+
 import os
 import re
 import json
@@ -22,13 +22,10 @@ print("✅ STEP 1: streamlit_app.py is running!")
 try:
     YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 except KeyError:
-    st.error("❌ API Key not found. Please set `YOUTUBE_API_KEY` in secrets.")
+    st.error(" API Key not found. Please set `YOUTUBE_API_KEY` in secrets.")
     st.info("Go to your app settings → Secrets → Add your key.")
     st.stop()
-print("✅ STEP 1: streamlit_app.py is running!")
-# =======================
 # Configuration
-# =======================
 DATA_DIR = os.path.join(os.getcwd(), "yt_trends_data")
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
 CATEGORY_CACHE = os.path.join(DATA_DIR, "category_cache.json")
@@ -81,9 +78,8 @@ def utcnow() -> dt.datetime:
 def ts_str(ts: dt.datetime) -> str:
     return ts.isoformat()
 
-# =======================
-# YouTube API Wrapper
-# =======================
+# ==========
+# YouTube AP
 @dataclass
 class VideoItem:
     video_id: str
@@ -104,7 +100,7 @@ class YouTubeAPI:
             self.youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
         except Exception as e:
             logger.error(f"Failed to initialize YouTube API: {e}")
-            st.error("❌ Failed to connect to YouTube API. Check your API key.")
+            st.error(" Failed to connect to YouTube API. Check your API key.")
             st.stop()
 
     def fetch_trending(self, region_code: str, max_results: int = 50) -> List[dict]:
@@ -132,15 +128,10 @@ class YouTubeAPI:
             logger.error(f"Failed to fetch categories: {e}")
             return {}
 
-# =======================
-# Web Scraping (DISABLED - for speed)
-# =======================
 def scrape_view_count(video_id: str, timeout: int = 10) -> int:
     return 0  # Fast: no delay
 
-# =======================
-# Category Cache
-# =======================
+
 def load_category_cache() -> Dict[str, Dict[str, str]]:
     if os.path.exists(CATEGORY_CACHE):
         try:
@@ -158,9 +149,7 @@ def save_category_cache(cache: Dict[str, Dict[str, str]]):
     except Exception as e:
         logger.error(f"Failed to save cache: {e}")
 
-# =======================
-# History Management
-# =======================
+# history 
 def history_path(region_code: str) -> str:
     return os.path.join(HISTORY_DIR, f"history_{region_code.upper()}.csv")
 
@@ -215,9 +204,7 @@ def compute_24h_delta(current_df: pd.DataFrame, hist_df: pd.DataFrame, now: dt.d
     current_df["delta_mode"] = modes
     return current_df
 
-# =======================
-# Analysis Functions
-# =======================
+# Analysis Function=
 def extract_hashtags(text: str) -> List[str]:
     if not isinstance(text, str):
         return []
@@ -235,9 +222,7 @@ def analyze_recent_uploads(df: pd.DataFrame, hours: int = 24) -> pd.Series:
     recent = df[df["published_at"].notnull() & (df["published_at"] >= cutoff)]
     return recent["category"].value_counts().head(5)
 
-# =======================
-# Plotting Functions
-# =======================
+# Plotting Function
 def plot_category_pie(cat_counts: pd.Series):
     if cat_counts.empty:
         fig = go.Figure()
@@ -285,27 +270,25 @@ def plot_recent_categories_bar(recent_cat_counts: pd.Series):
         labels={"x": "Category", "y": "# Trending Videos Published Recently"}
     )
 
-# =======================
-# Main App
-# =======================
+
 def main():
     st.set_page_config(page_title="YouTube Trending Dashboard", layout="wide")
 
-    st.title("📊 YouTube Trending Analytics Dashboard")
+    st.title("YouTube Trending Analytics Dashboard")
     st.markdown("""
     Real-time insights into what's trending on YouTube.
     
-    ### ✅ Features
+    ### Features
     - Top trending videos by country
     - View and like counts
     - 24-hour growth tracking
     - Category & hashtag analysis
     
-    > ⚠️ No auto-refresh — click **'Fetch Latest Data'** to update.
+    > No auto-refresh — click **'Fetch Latest Data'** to update.
     """)
 
     with st.sidebar:
-        st.header("⚙️ Settings")
+        st.header(" Settings")
         COUNTRIES = {
             "United States": "US",
             "India": "IN",
@@ -318,13 +301,13 @@ def main():
             "Japan": "JP",
             "South Korea": "KR",
         }
-        country_name = st.selectbox("🌍 Country", options=list(COUNTRIES.keys()), index=1)  # Default: India
+        country_name = st.selectbox(" Country", options=list(COUNTRIES.keys()), index=1)  # Default: India
         region_code = COUNTRIES[country_name]
         max_monitor = st.slider("🎥 Max Videos to Monitor", 5, 50, 30)
         st.info("Click the button below to load data.")
 
-    # 🎯 Main Action: Manual Refresh
-    if st.button("🔄 Fetch Latest Data") or "fetched" not in st.session_state:
+    #  Main Action: Manual Refresh
+    if st.button("Fetch Latest Data") or "fetched" not in st.session_state:
         st.session_state.fetched = True
         with st.spinner("Fetching trending videos..."):
             try:
@@ -341,7 +324,7 @@ def main():
                 # Fetch trending videos
                 items = yt.fetch_trending(region_code, max_monitor)
                 if not items:
-                    st.error("❌ Failed to fetch trending videos. Check region or API key.")
+                    st.error("Failed to fetch trending videos. Check region or API key.")
                     return
 
                 # Process videos
@@ -405,7 +388,7 @@ def main():
                 }
 
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                st.error(f" Error: {str(e)}")
                 logger.error(f"Error in main: {e}")
 
     # 📊 Display Data (only if fetched)
@@ -414,11 +397,11 @@ def main():
         updated_at = data["updated_at"]
 
         # Top 5 Videos
-        st.subheader("🔥 Top 5 Trending Videos (by views)")
+        st.subheader("Top 5 Trending Videos (by views)")
         for i, row in data["top5"].iterrows():
             st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
                         f"👁️ {human_int(row['views'])} views · "
-                        f"👍 {human_int(row['likes'])} likes")
+                        f" {human_int(row['likes'])} likes")
 
         # Charts (with unique keys)
         timestamp = int(time.time())
@@ -435,17 +418,17 @@ def main():
             st.plotly_chart(plot_recent_categories_bar(data["recent_cat_counts"]), key=f"bar3_{timestamp}", use_container_width=True)
 
         # Hashtags
-        st.subheader("#️⃣ Top 10 Hashtags in Descriptions")
+        st.subheader("# Top 10 Hashtags in Descriptions")
         if not data["hashtag_counts"].empty:
             for tag, cnt in data["hashtag_counts"].items():
                 st.markdown(f"- **{tag}** — {cnt} mentions")
         else:
             st.markdown("*No hashtags found.*")
 
-        st.success(f"✅ Last updated: {updated_at.strftime('%H:%M:%S UTC')} | Region: {country_name}")
+        st.success(f" Last updated: {updated_at.strftime('%H:%M:%S UTC')} | Region: {country_name}")
 
     else:
-        st.info("👉 Click 'Fetch Latest Data' to start.")
+        st.info("Click 'Fetch Latest Data' to start.")
 
 if __name__ == "__main__":
     main()
