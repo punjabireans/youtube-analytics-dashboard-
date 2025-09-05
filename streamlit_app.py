@@ -1,4 +1,3 @@
-
 import os
 import re
 import json
@@ -50,6 +49,13 @@ HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+# Predefined health-related keywords for suggestions
+HEALTH_KEYWORDS = [
+    "health", "wellness", "fitness", "nutrition", "diet", "exercise",
+    "sexual health", "orgasm", "prostate", "bladder", "sex", "penis", 
+    "testosterone", "hormones", "mental health", "meditation"
+]
+
 # =======================
 # Utility Functions
 # =======================
@@ -78,8 +84,26 @@ def utcnow() -> dt.datetime:
 def ts_str(ts: dt.datetime) -> str:
     return ts.isoformat()
 
+# Function to filter videos based on keywords
+def filter_videos_by_keywords(df: pd.DataFrame, keywords: List[str]) -> pd.DataFrame:
+    """Filter videos based on keywords in title, description, or tags"""
+    if not keywords:
+        return df
+    
+    # Convert to lowercase for case-insensitive matching
+    pattern = "|".join([re.escape(keyword.lower()) for keyword in keywords])
+    
+    # Check if any of the keywords are in title, description or tags
+    mask = (
+        df["title"].str.lower().str.contains(pattern, na=False) | 
+        df["description"].str.lower().str.contains(pattern, na=False) |
+        df["tags_str"].str.lower().str.contains(pattern, na=False)
+    )
+    
+    return df[mask].reset_index(drop=True)
+
 # ==========
-# YouTube AP
+# YouTube API
 @dataclass
 class VideoItem:
     video_id: str
@@ -280,6 +304,7 @@ def main():
     
     ### Features
     - Top trending videos by country
+    - Filter by keywords or categories
     - View and like counts
     - 24-hour growth tracking
     - Category & hashtag analysis
@@ -301,8 +326,36 @@ def main():
             "Japan": "JP",
             "South Korea": "KR",
         }
-        country_name = st.selectbox(" Country", options=list(COUNTRIES.keys()), index=1)  # Default: India
+        country_name = st.selectbox(" Country", options=list(COUNTRIES.keys()), index=0)  
+# Default: United States
         region_code = COUNTRIES[country_name]
+        
+        st.header("Filter Options")
+        
+        # Keyword filtering
+        filter_method = st.radio("Filter Method", ["Predefined Keywords", "Custom Keywords"])
+        
+        if filter_method == "Predefined Keywords":
+            selected_keywords = st.multiselect(
+                "Select Health Topics", 
+                options=HEALTH_KEYWORDS,
+                default=[]
+            )
+        else:
+            keyword_input = st.text_input("Enter Custom Keywords (comma separated)")
+            selected_keywords = [k.strip() for k in keyword_input.split(",")] if keyword_input else []
+        
+        # Category filtering
+        enable_category_filter = st.checkbox("Filter by Category")
+        selected_category = None
+        if enable_category_filter:
+            # We'll populate this after fetching data
+            if "categories" in st.session_state:
+                selected_category = st.selectbox(
+                    "Select Category",
+                    options=["All"] + list(st.session_state.categories.values())
+                )
+        
         max_monitor = st.slider("🎥 Max Videos to Monitor", 5, 50, 30)
         st.info("Click the button below to load data.")
 
@@ -320,6 +373,9 @@ def main():
                         cat_cache[region_code] = yt.fetch_categories(region_code)
                         save_category_cache(cat_cache)
                 cat_map = cat_cache[region_code]
+                
+                # Store categories for the UI
+                st.session_state.categories = cat_map
 
                 # Fetch trending videos
                 items = yt.fetch_trending(region_code, max_monitor)
@@ -341,6 +397,9 @@ def main():
                     vid = item["id"]
                     views_api = int(stats.get("viewCount", 0))
                     likes_api = int(stats.get("likeCount", 0))
+                    
+                    tags = snip.get("tags", [])
+                    tags_str = " ".join(tags).lower() if tags else ""
 
                     records.append({
                         "video_id": vid,
@@ -351,7 +410,8 @@ def main():
                         "likes": likes_api,
                         "category_id": snip.get("categoryId", "Unknown"),
                         "category": cat_map.get(snip.get("categoryId", ""), "Unknown"),
-                        "tags": snip.get("tags", []),
+                        "tags": tags,
+                        "tags_str": tags_str,
                         "description": snip.get("description", ""),
                         "published_at": published_dt,
                     })
@@ -367,6 +427,23 @@ def main():
                 # Compute deltas
                 full_hist = load_history(region_code)
                 df = compute_24h_delta(df, full_hist, now)
+                
+                # Apply category filtering if selected
+                if enable_category_filter and selected_category and selected_category != "All":
+                    df = df[df["category"] == selected_category].reset_index(drop=True)
+                
+                # Apply keyword filtering if any keywords selected
+                if selected_keywords:
+                    filtered_df = filter_videos_by_keywords(df, selected_keywords)
+                    
+                    # Show warning if no videos match the keywords
+                    if filtered_df.empty and not df.empty:
+                        st.warning(f"No trending videos match your keyword filters. Showing all trending videos instead.")
+                    elif not filtered_df.empty:
+                        df = filtered_df
+                
+                # Store the original unfiltered data
+                st.session_state.all_data = df.copy()
 
                 # Analytics
                 top5 = df.nlargest(5, "views")
@@ -384,46 +461,72 @@ def main():
                     "cat_counts": cat_counts,
                     "recent_cat_counts": recent_cat_counts,
                     "hashtag_counts": hashtag_counts,
-                    "updated_at": now
+                    "updated_at": now,
+                    "keywords_used": selected_keywords,
+                    "category_used": selected_category if enable_category_filter else None
                 }
 
             except Exception as e:
                 st.error(f" Error: {str(e)}")
                 logger.error(f"Error in main: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
     # 📊 Display Data (only if fetched)
     if "data" in st.session_state:
         data = st.session_state.data
         updated_at = data["updated_at"]
+        
+        # Show filtering information
+        if data.get("keywords_used"):
+            st.info(f"🔍 Filtered by keywords: {', '.join(data['keywords_used'])}")
+        
+        if data.get("category_used"):
+            st.info(f"📂 Filtered by category: {data['category_used']}")
+            
+        # Show how many videos match the filters
+        if "all_data" in st.session_state:
+            total_count = len(st.session_state.all_data)
+            filtered_count = len(data["top5"]) if not data["top5"].empty else 0
+            if filtered_count < total_count:
+                st.write(f"Showing {filtered_count} videos matching your filters out of {total_count} trending videos.")
 
         # Top 5 Videos
         st.subheader("Top 5 Trending Videos (by views)")
-        for i, row in data["top5"].iterrows():
-            st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
-                        f"👁️ {human_int(row['views'])} views · "
-                        f" {human_int(row['likes'])} likes")
+        if data["top5"].empty:
+            st.warning("No videos match your filters.")
+        else:
+            for i, row in data["top5"].iterrows():
+                st.markdown(f"**{i + 1}.** [{row['title']}]({row['url']}) — "
+                            f"👁️ {human_int(row['views'])} views · "
+                            f" {human_int(row['likes'])} likes · "
+                            f"Category: {row['category']}")
 
         # Charts (with unique keys)
         timestamp = int(time.time())
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(plot_category_pie(data["cat_counts"]), key=f"pie_{timestamp}", use_container_width=True)
-        with col2:
-            st.plotly_chart(plot_likes_views_bar(data["top5_delta"]), key=f"bar1_{timestamp}", use_container_width=True)
+        
+        if not data["top5"].empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(plot_category_pie(data["cat_counts"]), key=f"pie_{timestamp}", use_container_width=True)
+            with col2:
+                st.plotly_chart(plot_likes_views_bar(data["top5_delta"]), key=f"bar1_{timestamp}", use_container_width=True)
 
-        col3, col4 = st.columns(2)
-        with col3:
-            st.plotly_chart(plot_top_likes_bar(data["top8_likes"]), key=f"bar2_{timestamp}", use_container_width=True)
-        with col4:
-            st.plotly_chart(plot_recent_categories_bar(data["recent_cat_counts"]), key=f"bar3_{timestamp}", use_container_width=True)
+            col3, col4 = st.columns(2)
+            with col3:
+                st.plotly_chart(plot_top_likes_bar(data["top8_likes"]), key=f"bar2_{timestamp}", use_container_width=True)
+            with col4:
+                st.plotly_chart(plot_recent_categories_bar(data["recent_cat_counts"]), key=f"bar3_{timestamp}", use_container_width=True)
 
-        # Hashtags
-        st.subheader("# Top 10 Hashtags in Descriptions")
-        if not data["hashtag_counts"].empty:
-            for tag, cnt in data["hashtag_counts"].items():
-                st.markdown(f"- **{tag}** — {cnt} mentions")
+            # Hashtags
+            st.subheader("# Top 10 Hashtags in Descriptions")
+            if not data["hashtag_counts"].empty:
+                for tag, cnt in data["hashtag_counts"].items():
+                    st.markdown(f"- **{tag}** — {cnt} mentions")
+            else:
+                st.markdown("*No hashtags found.*")
         else:
-            st.markdown("*No hashtags found.*")
+            st.warning("No data to display. Try different filter criteria.")
 
         st.success(f" Last updated: {updated_at.strftime('%H:%M:%S UTC')} | Region: {country_name}")
 
